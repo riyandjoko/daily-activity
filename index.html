@@ -325,11 +325,37 @@ function doPost(e) {
         });
 
         // Log kendala koneksi ke UI
-        function showLog Kendala(errDetail) {
+        function showLogKendala(errDetail) {
             const container = document.getElementById('errorLogContainer');
             const msg = document.getElementById('errorLogMessage');
             container.classList.remove('hidden');
             msg.innerText = `[${new Date().toLocaleTimeString('id-ID')}] Error: ${errDetail}`;
+        }
+
+        // Handler Upload Gambar (Base64 Preview)
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) {
+                currentImageBase64 = '';
+                document.getElementById('imagePreviewContainer').classList.add('hidden');
+                return;
+            }
+
+            // Batasi ukuran file (misal max 2MB)
+            if (file.size > 2 * 1024 * 1024) {
+                showToast('Ukuran gambar terlalu besar! Maksimal 2MB', 'error');
+                e.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                currentImageBase64 = evt.target.result;
+                const imgPreview = document.getElementById('imagePreview');
+                imgPreview.src = currentImageBase64;
+                document.getElementById('imagePreviewContainer').classList.remove('hidden');
+            };
+            reader.readAsDataURL(file);
         }
 
         // Tes Koneksi Uji coba Webhook
@@ -355,12 +381,12 @@ function doPost(e) {
                 } else {
                     resultEl.className = "text-xs font-medium text-rose-600";
                     resultEl.innerText = `✕ Error HTTP ${res.status}`;
-                    showLog Kendala(`Server merespon dengan status code HTTP ${res.status}. Pastikan URL dari Google Deploy benar.`);
+                    showLogKendala(`Server merespon dengan status code HTTP ${res.status}. Pastikan URL dari Google Deploy benar.`);
                 }
             } catch (err) {
                 resultEl.className = "text-xs font-medium text-rose-600";
                 resultEl.innerText = "✕ Gagal koneksi!";
-                showLog Kendala(`CORS / Network Error: ${err.message}. Pastikan di Google Apps Script pengaturan 'Who has access' diset ke 'Anyone' (Siapa saja).`);
+                showLogKendala(`CORS / Network Error: ${err.message}. Pastikan di Google Apps Script pengaturan 'Who has access' diset ke 'Anyone' (Siapa saja).`);
             }
         }
 
@@ -410,8 +436,7 @@ function doPost(e) {
             if (itemIndex === -1) return;
 
             try {
-                // mode 'no-cors' jika mengalami kendala CORS ketat pada domain tertentu
-                const response = await fetch(scriptUrl, {
+                await fetch(scriptUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'text/plain;charset=utf-8',
@@ -426,7 +451,7 @@ function doPost(e) {
             } catch (err) {
                 console.error('Error Sync:', err);
                 showToast('Gagal terhubung ke Spreadsheet', 'error');
-                showLog Kendala(`Gagal mengirim data ID ${id}: ${err.message}. Periksa izin deployment Google Apps Script (harus 'Anyone').`);
+                showLogKendala(`Gagal mengirim data ID ${id}: ${err.message}. Periksa izin deployment Google Apps Script (harus 'Anyone').`);
             }
         }
 
@@ -471,7 +496,7 @@ function doPost(e) {
             
             if (lastError) {
                 showToast('Sebagian/seluruh data gagal dikirim', 'error');
-                showLog Kendala(`Sync batch gagal: ${lastError.message}. Periksa akses URL atau gunakan tombol Ekspor CSV sebagai cadangan.`);
+                showLogKendala(`Sync batch gagal: ${lastError.message}. Periksa akses URL atau gunakan tombol Ekspor CSV sebagai cadangan.`);
             }
         }
 
@@ -592,69 +617,6 @@ function doPost(e) {
         // Save local data
         function saveLocalData() {
             localStorage.setItem('daily_activities', JSON.stringify(activities));
-        }
-
-        // Kirim data tunggal ke Google Sheets
-        async function syncSingleActivity(id) {
-            if (!scriptUrl) {
-                showToast('URL Webhook belum diatur', 'warning');
-                return;
-            }
-
-            const itemIndex = activities.findIndex(a => a.id === id);
-            if (itemIndex === -1) return;
-
-            try {
-                await fetch(scriptUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8',
-                    },
-                    body: JSON.stringify(activities[itemIndex])
-                });
-
-                activities[itemIndex].synced = true;
-                saveLocalData();
-                renderActivities();
-                showToast('Tersimpan di Google Sheets!');
-            } catch (err) {
-                console.error('Error Sync:', err);
-                showToast('Gagal terhubung ke Google Sheets', 'error');
-            }
-        }
-
-        // Kirim semua item yang belum tersinkronisasi
-        async function syncAllPending() {
-            if (!scriptUrl) {
-                showToast('URL Google Apps Script belum disetel!', 'warning');
-                toggleModal('configModal');
-                return;
-            }
-
-            const pendingItems = activities.filter(a => !a.synced);
-            if (pendingItems.length === 0) {
-                showToast('Semua data sudah tersinkronisasi!');
-                return;
-            }
-
-            let successCount = 0;
-            for (let item of pendingItems) {
-                try {
-                    await fetch(scriptUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify(item)
-                    });
-                    item.synced = true;
-                    successCount++;
-                } catch (e) {
-                    console.error('Failed sync:', e);
-                }
-            }
-
-            saveLocalData();
-            renderActivities();
-            showToast(`Berhasil menyinkronkan ${successCount} data!`);
         }
 
         // Hapus Aktivitas
