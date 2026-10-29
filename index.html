@@ -70,6 +70,26 @@
             </button>
         </div>
 
+        <!-- Banner Error Log Display (Akan Muncul Jika Ada Error Sync) -->
+        <div id="errorLogContainer" class="mb-6 p-4 rounded-xl border bg-rose-50 border-rose-200 text-rose-900 hidden">
+            <div class="flex justify-between items-start mb-2">
+                <div class="flex items-center gap-2 font-bold text-sm text-rose-700">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Log Kendala Koneksi Spreadsheet</span>
+                </div>
+                <button onclick="document.getElementById('errorLogContainer').classList.add('hidden')" class="text-rose-400 hover:text-rose-600 text-xs">
+                    <i class="fa-solid fa-xmark"></i> Tutup
+                </button>
+            </div>
+            <p id="errorLogMessage" class="text-xs font-mono bg-rose-100 p-2.5 rounded border border-rose-200 mb-2 overflow-x-auto text-rose-800 whitespace-pre-wrap">-- Tidak ada log error --</p>
+            <div class="flex items-center justify-between text-xs">
+                <span class="text-rose-600">Solusi umum: Pastikan Deploy Apps Script diatur ke <b>"Anyone" / "Siapa Saja"</b> dan bukan "Only Myself".</span>
+                <button onclick="exportCSV()" class="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 rounded transition text-xs font-medium">
+                    <i class="fa-solid fa-file-csv mr-1"></i> Ekspor CSV Cadangan
+                </button>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
             <!-- Left Column: Form Input Aktivitas -->
@@ -161,9 +181,14 @@
                             <i class="fa-solid fa-list-check text-indigo-600"></i>
                             Daftar Catatan Aktivitas
                         </h3>
-                        <button id="btnSyncAll" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
-                            <i class="fa-solid fa-rotate"></i> Sync ke Sheets
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button onclick="exportCSV()" class="text-xs bg-slate-600 hover:bg-slate-700 text-white font-medium px-2.5 py-1.5 rounded-lg transition flex items-center gap-1">
+                                <i class="fa-solid fa-download"></i> CSV
+                            </button>
+                            <button id="btnSyncAll" onclick="syncAllPending()" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-rotate"></i> Sync ke Sheets
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Container List Card -->
@@ -210,6 +235,14 @@
                 <input type="url" id="scriptUrlInput" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
             </div>
 
+            <!-- Tombol Tes Koneksi -->
+            <div class="flex justify-between items-center pt-1">
+                <button onclick="testConnection()" id="btnTestConn" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg border border-slate-300 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-vial"></i> Tes Uji Koneksi
+                </button>
+                <span id="testResult" class="text-xs font-medium"></span>
+            </div>
+
             <div class="bg-indigo-50 p-3 rounded-lg flex items-center justify-between border border-indigo-100">
                 <span class="text-xs font-medium text-indigo-900">Salin Kode Apps Script Backend</span>
                 <button onclick="copyAppsScriptCode()" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-2.5 py-1 rounded transition">
@@ -237,8 +270,13 @@
         let scriptUrl = localStorage.getItem('script_url') || '';
         let currentImageBase64 = '';
 
-        // Preset Kode Google Apps Script (Updated)
-        const appsScriptCode = `function doPost(e) {
+        // Preset Kode Google Apps Script (Updated with CORS support for GET test)
+        const appsScriptCode = `function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({ status: "ok", message: "Web App Aktif!" }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var data = JSON.parse(e.postData.contents);
@@ -286,19 +324,154 @@
             document.getElementById('activityForm').addEventListener('submit', handleFormSubmit);
         });
 
-        // Handler Upload Gambar
-        function handleImageUpload(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    currentImageBase64 = event.target.result;
-                    const preview = document.getElementById('imagePreview');
-                    const previewContainer = document.getElementById('imagePreviewContainer');
-                    preview.src = currentImageBase64;
-                    previewContainer.classList.remove('hidden');
-                };
-                reader.readAsDataURL(file);
+        // Log kendala koneksi ke UI
+        function showLog Kendala(errDetail) {
+            const container = document.getElementById('errorLogContainer');
+            const msg = document.getElementById('errorLogMessage');
+            container.classList.remove('hidden');
+            msg.innerText = `[${new Date().toLocaleTimeString('id-ID')}] Error: ${errDetail}`;
+        }
+
+        // Tes Koneksi Uji coba Webhook
+        async function testConnection() {
+            const testUrl = document.getElementById('scriptUrlInput').value.trim();
+            const resultEl = document.getElementById('testResult');
+
+            if (!testUrl) {
+                resultEl.className = "text-xs font-medium text-rose-600";
+                resultEl.innerText = "URL kosong!";
+                return;
+            }
+
+            resultEl.className = "text-xs font-medium text-slate-500";
+            resultEl.innerText = "Menguji...";
+
+            try {
+                // Fetch tanpa redirect follow untuk tes respon endpoint
+                const res = await fetch(testUrl, { method: 'GET', redirect: 'follow' });
+                if (res.ok) {
+                    resultEl.className = "text-xs font-medium text-emerald-600";
+                    resultEl.innerText = "✓ Terhubung!";
+                } else {
+                    resultEl.className = "text-xs font-medium text-rose-600";
+                    resultEl.innerText = `✕ Error HTTP ${res.status}`;
+                    showLog Kendala(`Server merespon dengan status code HTTP ${res.status}. Pastikan URL dari Google Deploy benar.`);
+                }
+            } catch (err) {
+                resultEl.className = "text-xs font-medium text-rose-600";
+                resultEl.innerText = "✕ Gagal koneksi!";
+                showLog Kendala(`CORS / Network Error: ${err.message}. Pastikan di Google Apps Script pengaturan 'Who has access' diset ke 'Anyone' (Siapa saja).`);
+            }
+        }
+
+        // Ekspor data ke file CSV lokal jika koneksi bermasalah saat production
+        function exportCSV() {
+            if (activities.length === 0) {
+                showToast('Tidak ada data untuk diekspor', 'warning');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "ID,Tanggal,Waktu,Kategori,Jumlah,Catatan,Status Sync\n";
+
+            activities.forEach(a => {
+                const row = [
+                    a.id,
+                    a.date,
+                    `"${a.time}"`,
+                    `"${a.category}"`,
+                    a.quantity,
+                    `"${(a.notes || '').replace(/"/g, '""')}"`,
+                    a.synced ? "Synced" : "Pending"
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Laporan_Aktivitas_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('Data berhasil diekspor ke CSV!');
+        }
+
+        // Kirim data tunggal ke Google Sheets dengan Logging Detail
+        async function syncSingleActivity(id) {
+            if (!scriptUrl) {
+                showToast('URL Webhook belum diatur', 'warning');
+                toggleModal('configModal');
+                return;
+            }
+
+            const itemIndex = activities.findIndex(a => a.id === id);
+            if (itemIndex === -1) return;
+
+            try {
+                // mode 'no-cors' jika mengalami kendala CORS ketat pada domain tertentu
+                const response = await fetch(scriptUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8',
+                    },
+                    body: JSON.stringify(activities[itemIndex])
+                });
+
+                activities[itemIndex].synced = true;
+                saveLocalData();
+                renderActivities();
+                showToast('Tersimpan di Google Sheets!');
+            } catch (err) {
+                console.error('Error Sync:', err);
+                showToast('Gagal terhubung ke Spreadsheet', 'error');
+                showLog Kendala(`Gagal mengirim data ID ${id}: ${err.message}. Periksa izin deployment Google Apps Script (harus 'Anyone').`);
+            }
+        }
+
+        // Kirim semua item yang belum tersinkronisasi
+        async function syncAllPending() {
+            if (!scriptUrl) {
+                showToast('URL Google Apps Script belum disetel!', 'warning');
+                toggleModal('configModal');
+                return;
+            }
+
+            const pendingItems = activities.filter(a => !a.synced);
+            if (pendingItems.length === 0) {
+                showToast('Semua data sudah tersinkronisasi!');
+                return;
+            }
+
+            let successCount = 0;
+            let lastError = null;
+
+            for (let item of pendingItems) {
+                try {
+                    await fetch(scriptUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(item)
+                    });
+                    item.synced = true;
+                    successCount++;
+                } catch (e) {
+                    console.error('Failed sync:', e);
+                    lastError = e;
+                }
+            }
+
+            saveLocalData();
+            renderActivities();
+
+            if (successCount > 0) {
+                showToast(`Berhasil menyinkronkan ${successCount} data!`);
+            }
+            
+            if (lastError) {
+                showToast('Sebagian/seluruh data gagal dikirim', 'error');
+                showLog Kendala(`Sync batch gagal: ${lastError.message}. Periksa akses URL atau gunakan tombol Ekspor CSV sebagai cadangan.`);
             }
         }
 
